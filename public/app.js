@@ -1,4 +1,4 @@
-// Debug helper
+// Status helper
 const statusEl = document.getElementById('status');
 function setStatus(msg, color = '#888') {
   statusEl.textContent = msg;
@@ -16,7 +16,7 @@ try {
     cursorBlink: true,
     fontSize: 14,
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-    disableStdin: true,  // Only allow input via the text box below
+    disableStdin: true,
     theme: {
       background: '#1e1e1e',
       foreground: '#d4d4d4',
@@ -29,19 +29,27 @@ try {
   const terminalEl = document.getElementById('terminal');
   term.open(terminalEl);
 
+  // Prevent iOS keyboard on terminal tap
+  const helperTextarea = document.querySelector('.xterm-helper-textarea');
+  if (helperTextarea) {
+    helperTextarea.setAttribute('readonly', 'true');
+    helperTextarea.setAttribute('inputmode', 'none');
+  }
+
   setStatus('Terminal ready, connecting...');
 } catch (e) {
   setStatus('Terminal init error: ' + e.message, '#ef4444');
   console.error('Terminal init error:', e);
 }
 
-// Fit terminal to container once
+// Fit terminal
 try {
   fitAddon.fit();
 } catch (e) {
   console.error('Fit error:', e);
 }
 
+// WebSocket connection
 function connect() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}`;
@@ -56,7 +64,6 @@ function connect() {
 
   ws.onopen = () => {
     setStatus('Connected', '#22c55e');
-    // Fit again now that DOM is settled, then send size
     fitAddon.fit();
     ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
   };
@@ -85,93 +92,201 @@ function connect() {
 
 connect();
 
+// Keep terminal focused
+document.addEventListener('click', () => term.focus());
+
 // Send text to terminal
 function sendToTerminal(text) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'input', data: text }));
+    term.scrollToBottom();
   }
 }
 
-// Input area
-const textInput = document.getElementById('text-input');
-const sendBtn = document.getElementById('send-btn');
-const pttBtn = document.getElementById('ptt-btn');
-const stopBtn = document.getElementById('stop-btn');
+// Keyboard layouts (iOS-style)
+const layouts = {
+  default: [
+    'q w e r t y u i o p',
+    'a s d f g h j k l',
+    '{shift} z x c v b n m {bksp}',
+    '{numbers} {ctrlc} {space} {mic} {enter}'
+  ],
+  shift: [
+    'Q W E R T Y U I O P',
+    'A S D F G H J K L',
+    '{shift} Z X C V B N M {bksp}',
+    '{numbers} {ctrlc} {space} {mic} {enter}'
+  ],
+  numbers: [
+    '1 2 3 4 5 6 7 8 9 0',
+    '- / : ; ( ) $ & @ "',
+    '{symbols} . , ? ! \' {bksp}',
+    '{abc} {ctrlc} {space} {mic} {enter}'
+  ],
+  symbols: [
+    '[ ] { } # % ^ * + =',
+    '_ \\ | ~ < > € £ ¥ •',
+    '{numbers} . , ? ! \' {bksp}',
+    '{abc} {ctrlc} {space} {mic} {enter}'
+  ]
+};
 
-// Focus input on page load
-textInput.focus();
+const display = {
+  '{shift}': '⇧',
+  '{bksp}': '⌫',
+  '{enter}': '⏎',
+  '{space}': ' ',
+  '{numbers}': '123',
+  '{symbols}': '#+=',
+  '{abc}': 'ABC',
+  '{ctrlc}': ' ',
+  '{mic}': ' '
+};
 
-// Auto-resize textarea
-textInput.addEventListener('input', () => {
-  textInput.style.height = 'auto';
-  textInput.style.height = Math.min(textInput.scrollHeight, 120) + 'px';
+// Keyboard state
+let shiftActive = false;
+let currentLayout = 'default';
+
+// Initialize keyboard
+const Keyboard = window.SimpleKeyboard.default;
+const keyboard = new Keyboard({
+  onChange: () => {},
+  onKeyPress: handleKeyPress,
+  layout: layouts,
+  layoutName: 'default',
+  display: display,
+  theme: 'simple-keyboard hg-theme-default',
+  physicalKeyboardHighlight: false,
+  preventMouseDownDefault: true,
+  preventMouseUpDefault: true,
+  buttonTheme: [
+    {
+      class: 'mic-btn',
+      buttons: '{mic}'
+    },
+    {
+      class: 'ctrlc-btn',
+      buttons: '{ctrlc}'
+    }
+  ]
 });
 
-// Send button
-sendBtn.addEventListener('click', () => {
-  const text = textInput.value;
-  if (text) {
-    // Two-step: send text first, then \r separately (works for Claude Code)
-    sendToTerminal(text);
-    setTimeout(() => sendToTerminal('\r'), 10);
-    textInput.value = '';
-    textInput.style.height = 'auto';
-  } else {
-    // Empty input - just send Enter
-    sendToTerminal('\r');
+function handleKeyPress(button) {
+  console.log('Key pressed:', button);
+
+  // Handle special keys
+  switch (button) {
+    case '{shift}':
+      shiftActive = !shiftActive;
+      keyboard.setOptions({
+        layoutName: shiftActive ? 'shift' : 'default'
+      });
+      updateShiftButton();
+      return;
+
+    case '{numbers}':
+      currentLayout = 'numbers';
+      keyboard.setOptions({ layoutName: 'numbers' });
+      shiftActive = false;
+      updateShiftButton();
+      return;
+
+    case '{symbols}':
+      currentLayout = 'symbols';
+      keyboard.setOptions({ layoutName: 'symbols' });
+      return;
+
+    case '{abc}':
+      currentLayout = 'default';
+      keyboard.setOptions({ layoutName: 'default' });
+      shiftActive = false;
+      updateShiftButton();
+      return;
+
+    case '{bksp}':
+      sendToTerminal('\x7f');
+      return;
+
+    case '{enter}':
+      sendToTerminal('\r');
+      return;
+
+    case '{space}':
+      sendToTerminal(' ');
+      return;
+
+    case '{ctrlc}':
+      sendToTerminal('\x03');
+      return;
+
+    case '{mic}':
+      handleMicPress();
+      return;
+
+    default:
+      // Regular character - send to terminal
+      sendToTerminal(button);
+
+      // Auto-disable shift after typing a character
+      if (shiftActive && currentLayout !== 'numbers' && currentLayout !== 'symbols') {
+        shiftActive = false;
+        keyboard.setOptions({ layoutName: 'default' });
+        updateShiftButton();
+      }
   }
-});
+}
 
-// Enter to send (Shift+Enter for newline)
-textInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendBtn.click();
+function updateShiftButton() {
+  const shiftBtn = document.querySelector('[data-skbtn="{shift}"]');
+  if (shiftBtn) {
+    if (shiftActive) {
+      shiftBtn.classList.add('shift-active');
+    } else {
+      shiftBtn.classList.remove('shift-active');
+    }
   }
-});
+}
 
-// Stop button (Ctrl+C)
-stopBtn.addEventListener('click', () => {
-  sendToTerminal('\x03');
-  textInput.focus();
-});
-
-// Push-to-talk
+// Voice recording (toggle)
 let mediaRecorder = null;
 let audioChunks = [];
 let currentStream = null;
+let isRecording = false;
+
+async function handleMicPress() {
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+}
 
 async function startRecording() {
-  // Don't start if already recording
-  if (mediaRecorder && mediaRecorder.state === 'recording') {
-    console.log('Already recording');
-    return;
-  }
+  if (isRecording) return;
 
   try {
     currentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     mediaRecorder = new MediaRecorder(currentStream);
     audioChunks = [];
+    isRecording = true;
 
-    console.log('Started recording, mimeType:', mediaRecorder.mimeType);
+    updateMicButton();
+    setStatus('Recording...', '#ef4444');
 
     mediaRecorder.ondataavailable = (e) => {
-      console.log('Data available:', e.data.size, 'bytes');
       if (e.data.size > 0) {
         audioChunks.push(e.data);
       }
     };
 
     mediaRecorder.onstop = async () => {
-      console.log('Recording stopped, chunks:', audioChunks.length);
+      isRecording = false;
+      updateMicButton();
 
-      // Stop all tracks
       if (currentStream) {
         currentStream.getTracks().forEach(track => track.stop());
         currentStream = null;
       }
-
-      pttBtn.classList.remove('recording');
 
       if (audioChunks.length === 0) {
         setStatus('No audio recorded', '#ef4444');
@@ -180,14 +295,12 @@ async function startRecording() {
 
       const mimeType = mediaRecorder.mimeType || 'audio/webm';
       const audioBlob = new Blob(audioChunks, { type: mimeType });
-      console.log('Audio blob:', audioBlob.size, 'bytes, type:', mimeType);
 
       if (audioBlob.size < 1000) {
         setStatus('Recording too short', '#ef4444');
         return;
       }
 
-      // Transcribe
       setStatus('Transcribing...', '#f59e0b');
 
       try {
@@ -200,9 +313,8 @@ async function startRecording() {
         const data = await response.json();
 
         if (data.transcript) {
-          const current = textInput.value;
-          textInput.value = current + (current ? ' ' : '') + data.transcript;
-          textInput.dispatchEvent(new Event('input'));
+          // Send transcribed text directly to terminal
+          sendToTerminal(data.transcript);
           setStatus('Transcribed', '#22c55e');
         } else if (data.error) {
           setStatus('Transcription error: ' + data.error, '#ef4444');
@@ -216,56 +328,29 @@ async function startRecording() {
     };
 
     mediaRecorder.start();
-    pttBtn.classList.add('recording');
-    setStatus('Recording...', '#ef4444');
   } catch (err) {
     console.error('Failed to start recording:', err);
     setStatus('Microphone access denied', '#ef4444');
+    isRecording = false;
+    updateMicButton();
   }
 }
 
 function stopRecording() {
-  console.log('stopRecording called, state:', mediaRecorder?.state);
   if (mediaRecorder && mediaRecorder.state === 'recording') {
     mediaRecorder.stop();
-  } else {
-    pttBtn.classList.remove('recording');
   }
+  isRecording = false;
+  updateMicButton();
 }
 
-// PTT button - use pointerdown/up for unified mouse+touch handling
-pttBtn.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  pttBtn.setPointerCapture(e.pointerId);
-  startRecording();
-});
-
-pttBtn.addEventListener('pointerup', (e) => {
-  e.preventDefault();
-  stopRecording();
-});
-
-pttBtn.addEventListener('pointercancel', (e) => {
-  stopRecording();
-});
-
-// Focus the input box when tapping the terminal area
-// Use pointerup and check if it's a simple tap (not a selection drag)
-let pointerStart = null;
-document.getElementById('terminal').addEventListener('pointerdown', (e) => {
-  pointerStart = { x: e.clientX, y: e.clientY, time: Date.now() };
-}, true);
-
-document.getElementById('terminal').addEventListener('pointerup', (e) => {
-  if (!pointerStart) return;
-  const dx = Math.abs(e.clientX - pointerStart.x);
-  const dy = Math.abs(e.clientY - pointerStart.y);
-  const dt = Date.now() - pointerStart.time;
-  // If it was a quick tap without much movement, focus the input
-  if (dx < 10 && dy < 10 && dt < 300) {
-    textInput.focus();
+function updateMicButton() {
+  const micBtn = document.querySelector('[data-skbtn="{mic}"]');
+  if (micBtn) {
+    if (isRecording) {
+      micBtn.classList.add('recording');
+    } else {
+      micBtn.classList.remove('recording');
+    }
   }
-  pointerStart = null;
-}, true);
-
-
+}
