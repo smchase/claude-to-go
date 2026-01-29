@@ -1,0 +1,14 @@
+{
+  "name": "clod2go",
+  "version": "1.0.0",
+  "description": "Mobile-friendly web terminal with push-to-talk",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-pty": "^1.0.0",
+    "ws": "^8.16.0"
+  }
+}
