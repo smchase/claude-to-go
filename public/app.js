@@ -102,6 +102,7 @@ function sendToTerminal(text) {
 const textInput = document.getElementById('text-input');
 const sendBtn = document.getElementById('send-btn');
 const pttBtn = document.getElementById('ptt-btn');
+const stopBtn = document.getElementById('stop-btn');
 
 // Focus input on page load
 textInput.focus();
@@ -121,6 +122,9 @@ sendBtn.addEventListener('click', () => {
     setTimeout(() => sendToTerminal('\r'), 10);
     textInput.value = '';
     textInput.style.height = 'auto';
+  } else {
+    // Empty input - just send Enter
+    sendToTerminal('\r');
   }
 });
 
@@ -130,6 +134,12 @@ textInput.addEventListener('keydown', (e) => {
     e.preventDefault();
     sendBtn.click();
   }
+});
+
+// Stop button (Ctrl+C)
+stopBtn.addEventListener('click', () => {
+  sendToTerminal('\x03');
+  textInput.focus();
 });
 
 // Push-to-talk
