@@ -36,10 +36,14 @@ try {
 }
 
 // Fit terminal to container
+let lastCols = 0, lastRows = 0;
 function fitTerminal() {
   try {
     fitAddon.fit();
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    // Only send resize if dimensions actually changed
+    if (ws && ws.readyState === WebSocket.OPEN && (term.cols !== lastCols || term.rows !== lastRows)) {
+      lastCols = term.cols;
+      lastRows = term.rows;
       ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
     }
   } catch (e) {
@@ -48,7 +52,12 @@ function fitTerminal() {
 }
 
 fitTerminal();
-window.addEventListener('resize', fitTerminal);
+// Debounce resize events
+let resizeTimeout;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimeout);
+  resizeTimeout = setTimeout(fitTerminal, 100);
+});
 
 function connect() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
