@@ -71,16 +71,20 @@
     }
 
     .btn {
+      width: 36px;
       height: 36px;
-      padding: 0 12px;
-      font-size: 13px;
+      padding: 0;
+      font-size: 16px;
       font-family: inherit;
       background: #333;
       color: #d4d4d4;
       border: 1px solid #444;
-      border-radius: 4px;
+      border-radius: 50%;
       cursor: pointer;
       transition: background 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .btn:active {
@@ -101,6 +105,7 @@
     }
 
 
+
     /* Prevent zoom on iOS */
     input, textarea, select {
       font-size: 16px;
@@ -115,8 +120,8 @@
     <div id="status">Connecting...</div>
     <div id="input-area">
       <textarea id="text-input" rows="1" placeholder=""></textarea>
-      <button id="ptt-btn" class="btn" title="Hold to speak">mic</button>
-      <button id="send-btn" class="btn" title="Send">run</button>
+      <button id="ptt-btn" class="btn" title="Hold to speak">&#x1F3A4;</button>
+      <button id="send-btn" class="btn" title="Send">&#x25B6;</button>
     </div>
   </div>
 

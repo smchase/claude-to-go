@@ -113,7 +113,9 @@ textInput.addEventListener('input', () => {
 sendBtn.addEventListener('click', () => {
   const text = textInput.value;
   if (text) {
-    sendToTerminal(text + '\x0d');  // Ctrl+M - works for both shell and Claude Code
+    // Two-step: send text first, then \r separately (works for Claude Code)
+    sendToTerminal(text);
+    setTimeout(() => sendToTerminal('\r'), 10);
     textInput.value = '';
     textInput.style.height = 'auto';
   }
@@ -244,4 +246,5 @@ pttBtn.addEventListener('pointercancel', (e) => {
 document.getElementById('terminal').addEventListener('click', () => {
   textInput.focus();
 });
+
 
