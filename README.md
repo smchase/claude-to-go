@@ -1,4 +1,4 @@
-# clod2go
+# claude-to-go
 
 Mobile-friendly web terminal with push-to-talk voice input.
 

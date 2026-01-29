@@ -1,5 +1,5 @@
 {
-  "name": "clod2go",
+  "name": "claude-to-go",
   "version": "1.0.0",
   "description": "Mobile-friendly web terminal with push-to-talk",
   "main": "server.js",

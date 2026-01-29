@@ -117,7 +117,7 @@ function getLocalIP() {
 
 server.listen(PORT, '0.0.0.0', () => {
   const localIP = getLocalIP();
-  console.log(`\nclod2go running!`);
+  console.log(`\nclaude-to-go running!`);
   console.log(`  Local:   http://localhost:${PORT}`);
   console.log(`  Network: http://${localIP}:${PORT}`);
   console.log(`\nOpen the Network URL on your phone to connect.\n`);
