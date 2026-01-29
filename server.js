@@ -1,5 +1,7 @@
 const express = require('express');
 const http = require('http');
+const https = require('https');
+const fs = require('fs');
 const WebSocket = require('ws');
 const pty = require('node-pty');
 const path = require('path');
@@ -12,7 +14,21 @@ try {
 }
 
 const app = express();
-const server = http.createServer(app);
+
+// Use HTTPS if certs exist (required for microphone access on mobile)
+const certPath = path.join(__dirname, 'certs');
+const useHttps = fs.existsSync(path.join(certPath, 'key.pem')) && fs.existsSync(path.join(certPath, 'cert.pem'));
+
+let server;
+if (useHttps) {
+  server = https.createServer({
+    key: fs.readFileSync(path.join(certPath, 'key.pem')),
+    cert: fs.readFileSync(path.join(certPath, 'cert.pem')),
+  }, app);
+} else {
+  server = http.createServer(app);
+}
+
 const wss = new WebSocket.Server({ server });
 
 const PORT = process.env.PORT || 3000;
@@ -117,8 +133,12 @@ function getLocalIP() {
 
 server.listen(PORT, '0.0.0.0', () => {
   const localIP = getLocalIP();
+  const protocol = useHttps ? 'https' : 'http';
   console.log(`\nclaude-to-go running!`);
-  console.log(`  Local:   http://localhost:${PORT}`);
-  console.log(`  Network: http://${localIP}:${PORT}`);
+  console.log(`  Local:   ${protocol}://localhost:${PORT}`);
+  console.log(`  Network: ${protocol}://${localIP}:${PORT}`);
+  if (useHttps) {
+    console.log(`\n  Note: Accept the self-signed certificate warning in your browser.`);
+  }
   console.log(`\nOpen the Network URL on your phone to connect.\n`);
 });
