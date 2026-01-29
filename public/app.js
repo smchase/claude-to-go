@@ -1,61 +1,90 @@
+// Debug helper
+const statusEl = document.getElementById('status');
+function setStatus(msg, color = '#888') {
+  statusEl.textContent = msg;
+  statusEl.style.color = color;
+  console.log('[claude-to-go]', msg);
+}
+
 // Terminal setup
-const term = new Terminal({
-  cursorBlink: true,
-  fontSize: 14,
-  fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-  theme: {
-    background: '#1e1e1e',
-    foreground: '#d4d4d4',
-  },
-});
+let term, fitAddon, ws = null;
 
-const fitAddon = new FitAddon.FitAddon();
-term.loadAddon(fitAddon);
+try {
+  setStatus('Initializing terminal...');
 
-const terminalEl = document.getElementById('terminal');
-term.open(terminalEl);
+  term = new Terminal({
+    cursorBlink: true,
+    fontSize: 14,
+    fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+    theme: {
+      background: '#1e1e1e',
+      foreground: '#d4d4d4',
+    },
+  });
+
+  fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+
+  const terminalEl = document.getElementById('terminal');
+  term.open(terminalEl);
+
+  setStatus('Terminal ready, connecting...');
+} catch (e) {
+  setStatus('Terminal init error: ' + e.message, '#ef4444');
+  console.error('Terminal init error:', e);
+}
 
 // Fit terminal to container
 function fitTerminal() {
-  fitAddon.fit();
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+  try {
+    fitAddon.fit();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+    }
+  } catch (e) {
+    console.error('Fit error:', e);
   }
 }
 
 fitTerminal();
 window.addEventListener('resize', fitTerminal);
 
-// WebSocket connection
-let ws = null;
-const statusEl = document.getElementById('status');
-
 function connect() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(`${protocol}//${window.location.host}`);
+  const wsUrl = `${protocol}//${window.location.host}`;
+  setStatus('Connecting to ' + wsUrl + '...');
+
+  try {
+    ws = new WebSocket(wsUrl);
+  } catch (e) {
+    setStatus('WebSocket create error: ' + e.message, '#ef4444');
+    return;
+  }
 
   ws.onopen = () => {
-    statusEl.textContent = 'Connected';
-    statusEl.style.color = '#22c55e';
+    setStatus('Connected', '#22c55e');
     fitTerminal();
   };
 
   ws.onmessage = (event) => {
-    const msg = JSON.parse(event.data);
-    if (msg.type === 'output') {
-      term.write(msg.data);
+    try {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'output') {
+        term.write(msg.data);
+      }
+    } catch (e) {
+      console.error('Message parse error:', e);
     }
   };
 
-  ws.onclose = () => {
-    statusEl.textContent = 'Disconnected - tap to reconnect';
-    statusEl.style.color = '#ef4444';
+  ws.onclose = (e) => {
+    setStatus('Disconnected (code: ' + e.code + ') - tap to reconnect', '#ef4444');
     statusEl.onclick = connect;
   };
 
-  ws.onerror = () => {
-    statusEl.textContent = 'Connection error';
-    statusEl.style.color = '#ef4444';
+  ws.onerror = (e) => {
+    setStatus('Connection error', '#ef4444');
+    console.error('WebSocket error:', e);
   };
 }
 
@@ -203,7 +232,7 @@ pttBtn.addEventListener('touchcancel', () => {
 });
 
 // Allow clicking terminal to focus it (for scrolling, selection)
-terminalEl.addEventListener('click', () => {
+document.getElementById('terminal').addEventListener('click', () => {
   term.focus();
 });
 
