@@ -56,7 +56,8 @@ function connect() {
 
   ws.onopen = () => {
     setStatus('Connected', '#22c55e');
-    // Send initial terminal size once
+    // Fit again now that DOM is settled, then send size
+    fitAddon.fit();
     ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
   };
 
