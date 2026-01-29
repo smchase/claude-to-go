@@ -43,12 +43,16 @@ app.post('/transcribe', express.raw({ type: '*/*', limit: '50mb' }), async (req,
     return res.status(500).json({ error: 'DEEPGRAM_API_KEY not configured' });
   }
 
+  const contentType = req.headers['content-type'] || 'audio/webm';
+  console.log('Transcribe request:', req.body.length, 'bytes, content-type:', contentType);
+
   try {
-    const response = await fetch('https://api.deepgram.com/v1/listen?model=whisper-large&smart_format=true', {
+    // Use detect_language and let Deepgram figure out the encoding
+    const response = await fetch('https://api.deepgram.com/v1/listen?model=whisper-large&detect_language=true&smart_format=true', {
       method: 'POST',
       headers: {
         'Authorization': `Token ${DEEPGRAM_API_KEY}`,
-        'Content-Type': req.headers['content-type'] || 'audio/webm',
+        'Content-Type': contentType,
       },
       body: req.body,
     });
@@ -56,7 +60,7 @@ app.post('/transcribe', express.raw({ type: '*/*', limit: '50mb' }), async (req,
     if (!response.ok) {
       const error = await response.text();
       console.error('Deepgram error:', error);
-      return res.status(response.status).json({ error: 'Transcription failed' });
+      return res.status(response.status).json({ error: 'Transcription failed: ' + error });
     }
 
     const data = await response.json();

@@ -129,106 +129,114 @@ textInput.addEventListener('keydown', (e) => {
 // Push-to-talk
 let mediaRecorder = null;
 let audioChunks = [];
-let isRecording = false;
+let currentStream = null;
 
 async function startRecording() {
+  // Don't start if already recording
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    console.log('Already recording');
+    return;
+  }
+
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    currentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(currentStream);
     audioChunks = [];
 
+    console.log('Started recording, mimeType:', mediaRecorder.mimeType);
+
     mediaRecorder.ondataavailable = (e) => {
+      console.log('Data available:', e.data.size, 'bytes');
       if (e.data.size > 0) {
         audioChunks.push(e.data);
       }
     };
 
     mediaRecorder.onstop = async () => {
+      console.log('Recording stopped, chunks:', audioChunks.length);
+
       // Stop all tracks
-      stream.getTracks().forEach(track => track.stop());
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+      }
 
-      if (audioChunks.length === 0) return;
+      pttBtn.classList.remove('recording');
 
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+      if (audioChunks.length === 0) {
+        setStatus('No audio recorded', '#ef4444');
+        return;
+      }
+
+      const mimeType = mediaRecorder.mimeType || 'audio/webm';
+      const audioBlob = new Blob(audioChunks, { type: mimeType });
+      console.log('Audio blob:', audioBlob.size, 'bytes, type:', mimeType);
+
+      if (audioBlob.size < 1000) {
+        setStatus('Recording too short', '#ef4444');
+        return;
+      }
 
       // Transcribe
-      statusEl.textContent = 'Transcribing...';
-      statusEl.style.color = '#f59e0b';
+      setStatus('Transcribing...', '#f59e0b');
 
       try {
         const response = await fetch('/transcribe', {
           method: 'POST',
-          headers: { 'Content-Type': 'audio/webm' },
+          headers: { 'Content-Type': mimeType },
           body: audioBlob,
         });
 
         const data = await response.json();
 
         if (data.transcript) {
-          // Append to text input
           const current = textInput.value;
           textInput.value = current + (current ? ' ' : '') + data.transcript;
-          textInput.dispatchEvent(new Event('input')); // Trigger resize
-          statusEl.textContent = 'Transcribed';
-          statusEl.style.color = '#22c55e';
+          textInput.dispatchEvent(new Event('input'));
+          setStatus('Transcribed', '#22c55e');
         } else if (data.error) {
-          statusEl.textContent = 'Transcription error: ' + data.error;
-          statusEl.style.color = '#ef4444';
+          setStatus('Transcription error: ' + data.error, '#ef4444');
+        } else {
+          setStatus('No speech detected', '#f59e0b');
         }
       } catch (err) {
-        statusEl.textContent = 'Transcription failed';
-        statusEl.style.color = '#ef4444';
+        setStatus('Transcription failed', '#ef4444');
         console.error('Transcription error:', err);
       }
     };
 
     mediaRecorder.start();
-    isRecording = true;
     pttBtn.classList.add('recording');
-    statusEl.textContent = 'Recording...';
-    statusEl.style.color = '#ef4444';
+    setStatus('Recording...', '#ef4444');
   } catch (err) {
     console.error('Failed to start recording:', err);
-    statusEl.textContent = 'Microphone access denied';
-    statusEl.style.color = '#ef4444';
+    setStatus('Microphone access denied', '#ef4444');
   }
 }
 
 function stopRecording() {
-  if (mediaRecorder && isRecording) {
+  console.log('stopRecording called, state:', mediaRecorder?.state);
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
     mediaRecorder.stop();
-    isRecording = false;
+  } else {
     pttBtn.classList.remove('recording');
   }
 }
 
-// PTT button handlers (mouse and touch)
-pttBtn.addEventListener('mousedown', (e) => {
+// PTT button - use pointerdown/up for unified mouse+touch handling
+pttBtn.addEventListener('pointerdown', (e) => {
   e.preventDefault();
+  pttBtn.setPointerCapture(e.pointerId);
   startRecording();
 });
 
-pttBtn.addEventListener('mouseup', () => {
-  stopRecording();
-});
-
-pttBtn.addEventListener('mouseleave', () => {
-  if (isRecording) stopRecording();
-});
-
-// Touch events for mobile
-pttBtn.addEventListener('touchstart', (e) => {
-  e.preventDefault();
-  startRecording();
-});
-
-pttBtn.addEventListener('touchend', (e) => {
+pttBtn.addEventListener('pointerup', (e) => {
   e.preventDefault();
   stopRecording();
 });
 
-pttBtn.addEventListener('touchcancel', () => {
-  if (isRecording) stopRecording();
+pttBtn.addEventListener('pointercancel', (e) => {
+  stopRecording();
 });
 
 // Allow clicking terminal to focus it (for scrolling, selection)
