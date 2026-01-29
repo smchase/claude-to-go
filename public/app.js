@@ -103,6 +103,9 @@ const textInput = document.getElementById('text-input');
 const sendBtn = document.getElementById('send-btn');
 const pttBtn = document.getElementById('ptt-btn');
 
+// Focus input on page load
+textInput.focus();
+
 // Auto-resize textarea
 textInput.addEventListener('input', () => {
   textInput.style.height = 'auto';
