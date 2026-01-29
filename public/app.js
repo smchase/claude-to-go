@@ -242,9 +242,23 @@ pttBtn.addEventListener('pointercancel', (e) => {
   stopRecording();
 });
 
-// Focus the input box when clicking the terminal area
-document.getElementById('terminal').addEventListener('click', () => {
-  textInput.focus();
-});
+// Focus the input box when tapping the terminal area
+// Use pointerup and check if it's a simple tap (not a selection drag)
+let pointerStart = null;
+document.getElementById('terminal').addEventListener('pointerdown', (e) => {
+  pointerStart = { x: e.clientX, y: e.clientY, time: Date.now() };
+}, true);
+
+document.getElementById('terminal').addEventListener('pointerup', (e) => {
+  if (!pointerStart) return;
+  const dx = Math.abs(e.clientX - pointerStart.x);
+  const dy = Math.abs(e.clientY - pointerStart.y);
+  const dt = Date.now() - pointerStart.time;
+  // If it was a quick tap without much movement, focus the input
+  if (dx < 10 && dy < 10 && dt < 300) {
+    textInput.focus();
+  }
+  pointerStart = null;
+}, true);
 
 
