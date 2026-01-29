@@ -16,6 +16,7 @@ try {
     cursorBlink: true,
     fontSize: 14,
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+    disableStdin: true,  // Only allow input via the text box below
     theme: {
       background: '#1e1e1e',
       foreground: '#d4d4d4',
@@ -112,7 +113,7 @@ textInput.addEventListener('input', () => {
 sendBtn.addEventListener('click', () => {
   const text = textInput.value;
   if (text) {
-    sendToTerminal(text + '\n');
+    sendToTerminal(text + '\x0d');  // Ctrl+M - works for both shell and Claude Code
     textInput.value = '';
     textInput.style.height = 'auto';
   }
@@ -239,12 +240,8 @@ pttBtn.addEventListener('pointercancel', (e) => {
   stopRecording();
 });
 
-// Allow clicking terminal to focus it (for scrolling, selection)
+// Focus the input box when clicking the terminal area
 document.getElementById('terminal').addEventListener('click', () => {
-  term.focus();
+  textInput.focus();
 });
 
-// Handle terminal input directly (for arrow keys, etc when terminal is focused)
-term.onData((data) => {
-  sendToTerminal(data);
-});
