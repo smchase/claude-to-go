@@ -57,7 +57,7 @@ app.post('/transcribe', express.raw({ type: '*/*', limit: '50mb' }), async (req,
 
     const data = await response.json();
     const transcript = data.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
-    console.log(`[${timestamp}] Transcription success: "${transcript.substring(0, 50)}${transcript.length > 50 ? '...' : ''}"`);
+    console.log(`[${timestamp}] Transcription success: ${transcript.length} chars`);
     res.json({ transcript });
   } catch (err) {
     console.error(`[${timestamp}] Transcription failed: ${err.message}`);
