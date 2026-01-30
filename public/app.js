@@ -374,18 +374,24 @@ async function startRecording() {
           headers: { 'Content-Type': mimeType },
           body: audioBlob,
         });
+
+        if (!response.ok) {
+          setStatus(`Server error: ${response.status}`, '#ef4444');
+          return;
+        }
+
         const data = await response.json();
 
         if (data.transcript) {
           sendToTerminal(data.transcript);
           setStatus('Transcribed', '#22c55e');
         } else if (data.error) {
-          setStatus('Error: ' + data.error, '#ef4444');
+          setStatus(data.error, '#ef4444');
         } else {
           setStatus('No speech detected', '#f59e0b');
         }
       } catch (err) {
-        setStatus('Transcription failed', '#ef4444');
+        setStatus(`Network error: ${err.message}`, '#ef4444');
       }
     };
 
