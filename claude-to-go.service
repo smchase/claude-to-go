@@ -1,16 +1,18 @@
 ### systemd unit for running claude-to-go as a service
 ###
-### Install instructions (run these as root, e.g. with sudo):
-###   sudo cp /home/smchase/claude-to-go/claude-to-go.service /etc/systemd/system/claude-to-go.service
-###   sudo systemctl daemon-reload
-###   sudo systemctl enable --now claude-to-go.service
+### Install instructions:
+###   1. Copy this file and update the placeholders below:
+###      - Replace YOUR_USER with your username
+###      - Replace /path/to/node with your node binary path (run `which node` to find it)
+###   2. Copy to systemd:
+###      sudo cp claude-to-go.service /etc/systemd/system/claude-to-go.service
+###   3. Enable and start:
+###      sudo systemctl daemon-reload
+###      sudo systemctl enable --now claude-to-go.service
 ###
-### Assumptions:
-### - Project is located at /home/smchase/claude-to-go
-### - Node is installed via nvm at /home/smchase/.nvm/versions/node/v18.18.0/bin/node
-### - Environment variables are defined in /home/smchase/claude-to-go/.env
-###
-### Adjust User, WorkingDirectory, ExecStart, and EnvironmentFile if your setup differs.
+### Example paths:
+### - If using nvm: /home/YOUR_USER/.nvm/versions/node/v18.18.0/bin/node
+### - If using system node: /usr/bin/node
 
 [Unit]
 Description=claude-to-go web terminal
@@ -19,14 +21,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=smchase
-WorkingDirectory=/home/smchase/claude-to-go
+User=YOUR_USER
+WorkingDirectory=/home/YOUR_USER/claude-to-go
 
 # Load environment variables from .env
-EnvironmentFile=/home/smchase/claude-to-go/.env
+EnvironmentFile=/home/YOUR_USER/claude-to-go/.env
 
-# Run the server via node
-ExecStart=/home/smchase/.nvm/versions/node/v18.18.0/bin/node server.js
+# Run the server via node (update path as needed)
+ExecStart=/path/to/node server.js
 
 # Restart on failure
 Restart=on-failure
