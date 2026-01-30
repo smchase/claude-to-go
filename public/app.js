@@ -144,7 +144,7 @@ function connect() {
     setStatus('Disconnected - tap to reconnect', '#ef4444');
     document.onclick = () => {
       document.onclick = null;
-      term.write('\r\n');
+      term.write('\x1b[?25h');  // Show cursor (DECTCEM)
       connect();
     };
   };
