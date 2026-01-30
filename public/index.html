@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content, viewport-fit=cover">
   <title>claude-to-go</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/simple-keyboard@3.8/build/css/index.css">
@@ -31,11 +31,21 @@
       flex: 1;
       min-height: 0;
       padding: 4px;
-      overflow: hidden;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
     }
 
     #terminal {
-      height: 100%;
+      /* Height set dynamically by JS */
+      overflow: hidden;
+    }
+
+    /* Disable xterm's internal scroll - we handle it at container level */
+    .xterm-viewport {
+      overflow: hidden !important;
+    }
+    #terminal {
+      pointer-events: none !important;
     }
 
     #status {
@@ -49,6 +59,7 @@
     #keyboard-container {
       background: #2c2c2c;
       padding: 6px 4px;
+      padding-bottom: calc(6px + env(safe-area-inset-bottom));
       border-top: 1px solid #444;
     }
 
@@ -118,6 +129,6 @@
   <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/simple-keyboard@3.8/build/index.modern.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=59"></script>
 </body>
 </html>
