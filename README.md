@@ -2,7 +2,7 @@
 
 A mobile-friendly web terminal for using Claude Code from your phone. Features a custom on-screen keyboard, push-to-talk voice dictation, and optimized scrolling behavior for touchscreens.
 
-![Claude-to-Go Screenshot](claude-to-go.png)
+<img src="claude-to-go.png" alt="Claude-to-Go Screenshot" height="500">
 
 ## Features
 
