@@ -217,7 +217,7 @@ let currentLayout = 'default';
 
 // Key repeat settings
 const KEY_REPEAT_DELAY = 300;  // ms before repeat starts
-const KEY_REPEAT_RATE = 25;    // ms between repeats
+const KEY_REPEAT_RATE = 33;    // ms between repeats (30 keys/sec)
 let repeatTimeout = null;
 let repeatInterval = null;
 let currentHeldKey = null;
