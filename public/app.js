@@ -118,12 +118,21 @@ function connect() {
 
   ws.onopen = () => {
     setStatus('Connected', '#22c55e');
-    ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: currentRows }));
+    // Send connect message with session ID for tmux persistence
+    const sessionId = sessionStorage.getItem('claude-session');
+    ws.send(JSON.stringify({
+      type: 'connect',
+      sessionId: sessionId,
+      cols: term.cols,
+      rows: currentRows
+    }));
   };
 
   ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
-    if (msg.type === 'output') {
+    if (msg.type === 'session') {
+      sessionStorage.setItem('claude-session', msg.sessionId);
+    } else if (msg.type === 'output') {
       // Check if at bottom BEFORE write
       const wasAtBottom = isAtBottom();
 
