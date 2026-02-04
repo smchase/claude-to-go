@@ -1,11 +1,3 @@
-// Status helper
-const statusEl = document.getElementById('status');
-function setStatus(msg, color = '#888', onclick = null) {
-  statusEl.textContent = msg;
-  statusEl.style.color = color;
-  statusEl.onclick = onclick;
-}
-
 // Terminal setup
 let term, fitAddon, ws = null;
 const terminalEl = document.getElementById('terminal');
@@ -15,6 +7,15 @@ const FONT_SIZE = 14;
 let LINE_HEIGHT = Math.ceil(FONT_SIZE * 1.2); // initial estimate, updated after render
 const MAX_ROWS = 1000;
 const container = document.getElementById('terminal-container');
+
+// Status helper - click handlers on both status bar and terminal area
+const statusEl = document.getElementById('status');
+function setStatus(msg, color = '#888', onclick = null) {
+  statusEl.textContent = msg;
+  statusEl.style.color = color;
+  statusEl.onclick = onclick;
+  container.onclick = onclick;
+}
 
 term = new Terminal({
   cursorBlink: true,
@@ -119,11 +120,8 @@ function connect() {
 
   ws.onopen = () => {
     setStatus('Connected', '#22c55e');
-    // Send connect message with session ID for tmux persistence
-    const sessionId = sessionStorage.getItem('claude-session');
     ws.send(JSON.stringify({
       type: 'connect',
-      sessionId: sessionId,
       cols: term.cols,
       rows: currentRows
     }));
@@ -131,9 +129,7 @@ function connect() {
 
   ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
-    if (msg.type === 'session') {
-      sessionStorage.setItem('claude-session', msg.sessionId);
-    } else if (msg.type === 'output') {
+    if (msg.type === 'output') {
       // Check if at bottom BEFORE write
       const wasAtBottom = isAtBottom();
 
@@ -171,31 +167,39 @@ function sendToTerminal(text) {
   }
 }
 
+// Smart stop: Ctrl+C if command running, reset if at prompt
+function sendSmartStop() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'smart-stop' }));
+    scrollToBottom();
+  }
+}
+
 // Keyboard layouts
 const layouts = {
   default: [
     'q w e r t y u i o p',
     'a s d f g h j k l',
     '{shift} z x c v b n m {bksp}',
-    '{numbers} {ctrlc} {space} {mic} {enter}'
+    '{numbers} {eject} {space} {mic} {enter}'
   ],
   shift: [
     'Q W E R T Y U I O P',
     'A S D F G H J K L',
     '{shift} Z X C V B N M {bksp}',
-    '{numbers} {ctrlc} {space} {mic} {enter}'
+    '{numbers} {eject} {space} {mic} {enter}'
   ],
   numbers: [
     '1 2 3 4 5 6 7 8 9 0',
     '- / : ; ( ) $ & @ "',
     '{symbols} . , ? ! \' {bksp}',
-    '{abc} {ctrlc} {space} {mic} {enter}'
+    '{abc} {eject} {space} {mic} {enter}'
   ],
   symbols: [
     '[ ] { } # % ^ * + =',
     '_ \\ | ~ < > € £ ¥ •',
     '{numbers} . , ? ! \' {bksp}',
-    '{abc} {ctrlc} {space} {mic} {enter}'
+    '{abc} {eject} {space} {mic} {enter}'
   ]
 };
 
@@ -207,7 +211,7 @@ const display = {
   '{numbers}': '123',
   '{symbols}': '#+=',
   '{abc}': 'ABC',
-  '{ctrlc}': ' ',
+  '{eject}': '⏏',
   '{mic}': ' '
 };
 
@@ -240,7 +244,7 @@ const keyboard = new Keyboard({
   disableButtonHold: true,
   buttonTheme: [
     { class: 'mic-btn', buttons: '{mic}' },
-    { class: 'ctrlc-btn', buttons: '{ctrlc}' }
+    { class: 'eject-btn', buttons: '{eject}' }
   ]
 });
 
@@ -289,8 +293,8 @@ function handleKeyPress(button) {
       case '{space}':
         sendToTerminal(' ');
         return true;
-      case '{ctrlc}':
-        sendToTerminal('\x03');
+      case '{eject}':
+        sendSmartStop();
         return false;
       case '{mic}':
         handleMicPress();
