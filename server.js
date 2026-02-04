@@ -17,17 +17,17 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 const PORT = process.env.PORT || 3000;
-const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Transcription endpoint - proxies to Deepgram
-app.post('/transcribe', express.raw({ type: '*/*', limit: '50mb' }), async (req, res) => {
+// Transcription endpoint - proxies to Groq Whisper API
+app.post('/transcribe', express.raw({ type: '*/*', limit: '25mb' }), async (req, res) => {
   const timestamp = new Date().toISOString();
 
-  if (!DEEPGRAM_API_KEY) {
-    console.error(`[${timestamp}] Transcription failed: DEEPGRAM_API_KEY not configured`);
+  if (!GROQ_API_KEY) {
+    console.error(`[${timestamp}] Transcription failed: GROQ_API_KEY not configured`);
     return res.status(500).json({ error: 'API key not configured' });
   }
 
@@ -39,24 +39,41 @@ app.post('/transcribe', express.raw({ type: '*/*', limit: '50mb' }), async (req,
   const contentType = req.headers['content-type'] || 'audio/webm';
   console.log(`[${timestamp}] Transcribe request: ${req.body.length} bytes, type: ${contentType}`);
 
+  // Build multipart form data for Groq API
+  const boundary = '----FormBoundary' + Math.random().toString(36).slice(2);
+  const ext = contentType.includes('webm') ? 'webm' : contentType.includes('mp4') ? 'mp4' : 'wav';
+
+  const formParts = [
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="file"; filename="audio.${ext}"\r\n` +
+    `Content-Type: ${contentType}\r\n\r\n`,
+    req.body,
+    `\r\n--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="model"\r\n\r\n` +
+    `whisper-large-v3-turbo\r\n` +
+    `--${boundary}--\r\n`
+  ];
+
+  const body = Buffer.concat(formParts.map(p => typeof p === 'string' ? Buffer.from(p) : p));
+
   try {
-    const response = await fetch('https://api.deepgram.com/v1/listen?model=whisper-large&detect_language=true&smart_format=true', {
+    const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
-        'Authorization': `Token ${DEEPGRAM_API_KEY}`,
-        'Content-Type': contentType,
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
       },
-      body: req.body,
+      body: body,
     });
 
     if (!response.ok) {
       const error = await response.text();
-      console.error(`[${timestamp}] Deepgram API error (${response.status}): ${error}`);
-      return res.status(response.status).json({ error: `Deepgram error: ${response.status}` });
+      console.error(`[${timestamp}] Groq API error (${response.status}): ${error}`);
+      return res.status(response.status).json({ error: `Groq error: ${response.status}` });
     }
 
     const data = await response.json();
-    const transcript = data.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
+    const transcript = (data.text || '').trim();
     console.log(`[${timestamp}] Transcription success: ${transcript.length} chars`);
     res.json({ transcript });
   } catch (err) {
@@ -68,32 +85,28 @@ app.post('/transcribe', express.raw({ type: '*/*', limit: '50mb' }), async (req,
 
 // Tmux session management
 const { execSync } = require('child_process');
-const crypto = require('crypto');
 
 // Dedicated socket to avoid conflicts with user's default tmux
 const TMUX_SOCKET = '/tmp/tmux-claude-to-go';
+const SESSION_NAME = 'claude-to-go';
 
-function generateSessionId() {
-  return 'claude-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex');
-}
-
-function sessionExists(sessionId) {
+function sessionExists() {
   try {
-    execSync(`tmux -S ${TMUX_SOCKET} has-session -t ${sessionId} 2>/dev/null`);
+    execSync(`tmux -S ${TMUX_SOCKET} has-session -t ${SESSION_NAME} 2>/dev/null`);
     return true;
   } catch (e) {
     return false;
   }
 }
 
-function createSession(sessionId, cols, rows) {
+function createSession(cols, rows) {
   try {
-    execSync(`tmux -S ${TMUX_SOCKET} new-session -d -s ${sessionId} -x ${cols} -y ${rows}`, {
+    execSync(`tmux -S ${TMUX_SOCKET} new-session -d -s ${SESSION_NAME} -x ${cols} -y ${rows}`, {
       cwd: process.env.HOME,
       env: process.env,
     });
-    execSync(`tmux -S ${TMUX_SOCKET} set-option -t ${sessionId} status off`);
-    console.log(`Created tmux session: ${sessionId}`);
+    execSync(`tmux -S ${TMUX_SOCKET} set-option -t ${SESSION_NAME} status off`);
+    console.log(`Created tmux session: ${SESSION_NAME}`);
     return true;
   } catch (e) {
     console.error(`Failed to create tmux session: ${e.message}`);
@@ -101,41 +114,11 @@ function createSession(sessionId, cols, rows) {
   }
 }
 
-// Clean up sessions older than 24 hours
-const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-
-function cleanupOldSessions() {
-  try {
-    const output = execSync(`tmux -S ${TMUX_SOCKET} list-sessions -F "#{session_name}" 2>/dev/null`, { encoding: 'utf8' });
-    const sessions = output.trim().split('\n').filter(Boolean);
-    const now = Date.now();
-
-    for (const session of sessions) {
-      // Extract timestamp from session name: claude-{timestamp}-{random}
-      const match = session.match(/^claude-(\d+)-/);
-      if (match) {
-        const created = parseInt(match[1], 10);
-        if (now - created > SESSION_MAX_AGE_MS) {
-          execSync(`tmux -S ${TMUX_SOCKET} kill-session -t ${session} 2>/dev/null`);
-          console.log(`Cleaned up old session: ${session}`);
-        }
-      }
-    }
-  } catch (e) {
-    // No sessions or tmux not running
-  }
-}
-
-// Run cleanup on startup and every hour
-cleanupOldSessions();
-setInterval(cleanupOldSessions, 60 * 60 * 1000);
-
 // WebSocket handler for terminal
 wss.on('connection', (ws) => {
   console.log('New terminal connection');
 
   let ptyProcess = null;
-  let currentSessionId = null;
 
   ws.on('message', (message) => {
     try {
@@ -145,21 +128,16 @@ wss.on('connection', (ws) => {
         const cols = msg.cols || 80;
         const rows = msg.rows || 24;
 
-        if (msg.sessionId && sessionExists(msg.sessionId)) {
-          console.log(`Reconnecting to tmux session: ${msg.sessionId}`);
-          currentSessionId = msg.sessionId;
-        } else {
-          currentSessionId = generateSessionId();
-          if (!createSession(currentSessionId, cols, rows)) {
+        // Create session if it doesn't exist
+        if (!sessionExists()) {
+          if (!createSession(cols, rows)) {
             ws.send(JSON.stringify({ type: 'output', data: '\r\nFailed to create session\r\n' }));
             ws.close();
             return;
           }
         }
 
-        ws.send(JSON.stringify({ type: 'session', sessionId: currentSessionId }));
-
-        ptyProcess = pty.spawn('tmux', ['-S', TMUX_SOCKET, 'attach', '-t', currentSessionId], {
+        ptyProcess = pty.spawn('tmux', ['-S', TMUX_SOCKET, 'attach', '-t', SESSION_NAME], {
           name: 'xterm-256color',
           cols: cols,
           rows: rows,
@@ -183,6 +161,21 @@ wss.on('connection', (ws) => {
         ptyProcess.write(msg.data);
       } else if (msg.type === 'resize' && ptyProcess) {
         ptyProcess.resize(msg.cols, msg.rows);
+      } else if (msg.type === 'smart-stop' && ptyProcess) {
+        // Check if shell is idle or running a command
+        try {
+          const result = execSync(`tmux -S ${TMUX_SOCKET} display-message -p -t ${SESSION_NAME} '#{pane_current_command}'`).toString().trim();
+          if (result === 'bash' || result === 'zsh' || result === 'sh') {
+            // At prompt - respawn pane with fresh shell (no visible command)
+            execSync(`tmux -S ${TMUX_SOCKET} respawn-pane -k -t ${SESSION_NAME} -c ${process.env.HOME}`);
+          } else {
+            // Command running - send Ctrl+C
+            ptyProcess.write('\x03');
+          }
+        } catch (e) {
+          // Fallback to Ctrl+C if tmux query fails
+          ptyProcess.write('\x03');
+        }
       }
     } catch (e) {
       // Invalid message, ignore
