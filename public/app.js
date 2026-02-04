@@ -212,7 +212,7 @@ const display = {
   '{symbols}': '#+=',
   '{abc}': 'ABC',
   '{eject}': '⏏',
-  '{mic}': ' '
+  '{mic}': '⏏'  // Same char as eject for equal width; hidden via CSS, shows SVG mic icon
 };
 
 let shiftActive = false;

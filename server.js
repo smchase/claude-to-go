@@ -3,6 +3,8 @@ const http = require('http');
 const WebSocket = require('ws');
 const pty = require('node-pty');
 const path = require('path');
+const axios = require('axios');
+const FormData = require('form-data');
 
 // Load .env if present
 try {
@@ -54,78 +56,45 @@ app.post('/transcribe', express.raw({ type: '*/*', limit: '25mb' }), async (req,
   const contentType = req.headers['content-type'] || 'audio/webm';
   log('info', 'Transcribe request received', { bytes: req.body.length, contentType });
 
-  // Build multipart form data for Groq API
-  const boundary = '----FormBoundary' + Math.random().toString(36).slice(2);
+  // Build multipart form data using form-data package (most reliable)
   const ext = contentType.includes('webm') ? 'webm' : contentType.includes('mp4') ? 'mp4' : 'wav';
+  const form = new FormData();
+  form.append('file', req.body, {
+    filename: `audio.${ext}`,
+    contentType: contentType,
+  });
+  form.append('model', 'whisper-large-v3-turbo');
 
-  const formParts = [
-    `--${boundary}\r\n` +
-    `Content-Disposition: form-data; name="file"; filename="audio.${ext}"\r\n` +
-    `Content-Type: ${contentType}\r\n\r\n`,
-    req.body,
-    `\r\n--${boundary}\r\n` +
-    `Content-Disposition: form-data; name="model"\r\n\r\n` +
-    `whisper-large-v3-turbo\r\n` +
-    `--${boundary}--\r\n`
-  ];
-
-  const body = Buffer.concat(formParts.map(p => typeof p === 'string' ? Buffer.from(p) : p));
-  log('info', 'Request prepared', { payloadBytes: body.length });
+  log('info', 'Request prepared', { payloadBytes: req.body.length });
 
   try {
     log('info', 'Sending request to Groq API');
-    const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-      method: 'POST',
+    const response = await axios.post('https://api.groq.com/openai/v1/audio/transcriptions', form, {
       headers: {
         'Authorization': `Bearer ${GROQ_API_KEY}`,
-        'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        'Connection': 'close',  // Disable keep-alive to avoid stale connection pool issues
+        ...form.getHeaders(),
       },
-      body: body,
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+      timeout: 60000,
     });
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      const headers = Object.fromEntries(response.headers.entries());
-      log('error', 'Groq API returned error', {
-        status: response.status,
-        statusText: response.statusText,
-        headers,
-        body: errorBody.slice(0, 1000),
-      });
-      return res.status(response.status).json({ error: `Groq error: ${response.status}` });
-    }
-
-    const data = await response.json();
-    const transcript = (data.text || '').trim();
+    const transcript = (response.data.text || '').trim();
     log('info', 'Transcription success', { chars: transcript.length });
     res.json({ transcript });
   } catch (err) {
-    // Extract all possible error details
     const errorDetails = {
       message: err.message,
-      name: err.name,
       code: err.code,
-      errno: err.errno,
-      syscall: err.syscall,
-      hostname: err.hostname,
-      cause: err.cause ? {
-        message: err.cause.message,
-        code: err.cause.code,
-        errno: err.cause.errno,
-        syscall: err.cause.syscall,
-        hostname: err.cause.hostname,
-      } : undefined,
-      stack: err.stack,
+      status: err.response?.status,
+      statusText: err.response?.statusText,
+      responseData: err.response?.data,
     };
-    // Remove undefined values
     Object.keys(errorDetails).forEach(k => errorDetails[k] === undefined && delete errorDetails[k]);
-    if (errorDetails.cause) {
-      Object.keys(errorDetails.cause).forEach(k => errorDetails.cause[k] === undefined && delete errorDetails.cause[k]);
-    }
 
-    log('error', 'Transcription failed - network/fetch error', errorDetails);
-    res.status(500).json({ error: `Server error: ${err.message}` });
+    log('error', 'Transcription failed', errorDetails);
+    const status = err.response?.status || 500;
+    res.status(status).json({ error: `Transcription error: ${err.message}` });
   }
 });
 
