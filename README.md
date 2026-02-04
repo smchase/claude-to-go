@@ -7,7 +7,7 @@ A mobile-friendly web terminal for using Claude Code from your phone. Features a
 ## Features
 
 - **Custom On-Screen Keyboard**: Full QWERTY with numbers/symbols layouts, key repeat support, and Ctrl+C for interrupts
-- **Voice Dictation**: Hold the mic button to record, release to transcribe using Deepgram's Whisper large model with auto language detection
+- **Voice Dictation**: Hold the mic button to record, release to transcribe using Groq's Whisper API with auto language detection
 - **Mobile-Optimized Terminal**: Dynamic terminal growth with smooth touch scrolling that preserves your scroll position
 - **Persistent Connections**: WebSocket-based terminal with auto-reconnect on connection loss
 
@@ -19,7 +19,7 @@ npm install
 
 # Create .env file
 cp .env.example .env
-# Edit .env and add your DEEPGRAM_API_KEY
+# Edit .env and add your GROQ_API_KEY
 
 # Start the server
 npm start
@@ -100,7 +100,7 @@ sudo systemctl start claude-to-go
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DEEPGRAM_API_KEY` | API key for voice transcription | (required for voice) |
+| `GROQ_API_KEY` | Groq API key for voice transcription | (required for voice) |
 | `PORT` | Server port | 3000 |
 
 ## How It Works
@@ -108,4 +108,4 @@ sudo systemctl start claude-to-go
 - **Terminal**: xterm.js connects via WebSocket to a node-pty shell process
 - **Keyboard**: simple-keyboard with custom layouts; bypasses iOS system keyboard
 - **Scrolling**: Terminal grows dynamically while preserving scroll position
-- **Voice**: Records WebM audio, sends to Deepgram API, injects transcript as terminal input
+- **Voice**: Records WebM audio, sends to Groq Whisper API, injects transcript as terminal input
