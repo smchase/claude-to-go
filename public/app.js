@@ -1,8 +1,9 @@
 // Status helper
 const statusEl = document.getElementById('status');
-function setStatus(msg, color = '#888') {
+function setStatus(msg, color = '#888', onclick = null) {
   statusEl.textContent = msg;
   statusEl.style.color = color;
+  statusEl.onclick = onclick;
 }
 
 // Terminal setup
@@ -150,12 +151,10 @@ function connect() {
   };
 
   ws.onclose = (e) => {
-    setStatus('Disconnected - tap to reconnect', '#ef4444');
-    document.onclick = () => {
-      document.onclick = null;
+    setStatus('Disconnected - tap to reconnect', '#ef4444', () => {
       term.write('\x1b[?25h\r\n');  // Show cursor and move to new line for clean reconnect
       connect();
-    };
+    });
   };
 
   ws.onerror = () => setStatus('Connection error', '#ef4444');
@@ -330,6 +329,60 @@ let audioChunks = [];
 let currentStream = null;
 let isRecording = false;
 
+// Pending audio for retry on transcription failure
+let pendingAudioBlob = null;
+let pendingMimeType = null;
+
+async function transcribeAudio(audioBlob, mimeType) {
+  setStatus('Transcribing...', '#f59e0b');
+
+  try {
+    const response = await fetch('/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': mimeType },
+      body: audioBlob,
+    });
+
+    if (!response.ok) {
+      // Server error - offer retry
+      pendingAudioBlob = audioBlob;
+      pendingMimeType = mimeType;
+      setStatus('Transcription failed - tap to retry', '#ef4444', retryTranscription);
+      return;
+    }
+
+    const data = await response.json();
+
+    if (data.transcript) {
+      sendToTerminal(data.transcript);
+      setStatus('Transcribed', '#22c55e');
+      pendingAudioBlob = null;
+      pendingMimeType = null;
+    } else if (data.error) {
+      // API returned error - offer retry
+      pendingAudioBlob = audioBlob;
+      pendingMimeType = mimeType;
+      setStatus('Transcription failed - tap to retry', '#ef4444', retryTranscription);
+    } else {
+      // No speech detected - don't offer retry
+      setStatus('No speech detected', '#f59e0b');
+      pendingAudioBlob = null;
+      pendingMimeType = null;
+    }
+  } catch (err) {
+    // Network error - offer retry
+    pendingAudioBlob = audioBlob;
+    pendingMimeType = mimeType;
+    setStatus('Transcription failed - tap to retry', '#ef4444', retryTranscription);
+  }
+}
+
+function retryTranscription() {
+  if (pendingAudioBlob && pendingMimeType) {
+    transcribeAudio(pendingAudioBlob, pendingMimeType);
+  }
+}
+
 async function handleMicPress() {
   if (isRecording) {
     stopRecording();
@@ -340,6 +393,10 @@ async function handleMicPress() {
 
 async function startRecording() {
   if (isRecording) return;
+
+  // Clear any pending retry audio
+  pendingAudioBlob = null;
+  pendingMimeType = null;
 
   try {
     currentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -375,33 +432,7 @@ async function startRecording() {
         return;
       }
 
-      setStatus('Transcribing...', '#f59e0b');
-
-      try {
-        const response = await fetch('/transcribe', {
-          method: 'POST',
-          headers: { 'Content-Type': mimeType },
-          body: audioBlob,
-        });
-
-        if (!response.ok) {
-          setStatus(`Server error: ${response.status}`, '#ef4444');
-          return;
-        }
-
-        const data = await response.json();
-
-        if (data.transcript) {
-          sendToTerminal(data.transcript);
-          setStatus('Transcribed', '#22c55e');
-        } else if (data.error) {
-          setStatus(data.error, '#ef4444');
-        } else {
-          setStatus('No speech detected', '#f59e0b');
-        }
-      } catch (err) {
-        setStatus(`Network error: ${err.message}`, '#ef4444');
-      }
+      transcribeAudio(audioBlob, mimeType);
     };
 
     mediaRecorder.start();
