@@ -19,25 +19,40 @@ const wss = new WebSocket.Server({ server });
 const PORT = process.env.PORT || 3000;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
+// Simple logger with consistent timestamp format
+function log(level, category, msg, details = null) {
+  const timestamp = new Date().toISOString();
+  const detailStr = details ? ' ' + JSON.stringify(details) : '';
+  console[level](`[${timestamp}] [${category}] ${msg}${detailStr}`);
+}
+
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Transcription endpoint - proxies to Groq Whisper API
 app.post('/transcribe', express.raw({ type: '*/*', limit: '25mb' }), async (req, res) => {
   const timestamp = new Date().toISOString();
+  const requestId = Math.random().toString(36).slice(2, 10);
+  const startTime = Date.now();
+
+  const log = (level, msg, details = {}) => {
+    const elapsed = Date.now() - startTime;
+    const detailStr = Object.keys(details).length > 0 ? ' ' + JSON.stringify(details) : '';
+    console[level](`[${timestamp}] [${requestId}] [${elapsed}ms] ${msg}${detailStr}`);
+  };
 
   if (!GROQ_API_KEY) {
-    console.error(`[${timestamp}] Transcription failed: GROQ_API_KEY not configured`);
+    log('error', 'Transcription failed: GROQ_API_KEY not configured');
     return res.status(500).json({ error: 'API key not configured' });
   }
 
   if (!req.body || req.body.length === 0) {
-    console.error(`[${timestamp}] Transcription failed: Empty request body`);
+    log('error', 'Transcription failed: Empty request body');
     return res.status(400).json({ error: 'No audio data received' });
   }
 
   const contentType = req.headers['content-type'] || 'audio/webm';
-  console.log(`[${timestamp}] Transcribe request: ${req.body.length} bytes, type: ${contentType}`);
+  log('info', 'Transcribe request received', { bytes: req.body.length, contentType });
 
   // Build multipart form data for Groq API
   const boundary = '----FormBoundary' + Math.random().toString(36).slice(2);
@@ -55,30 +70,61 @@ app.post('/transcribe', express.raw({ type: '*/*', limit: '25mb' }), async (req,
   ];
 
   const body = Buffer.concat(formParts.map(p => typeof p === 'string' ? Buffer.from(p) : p));
+  log('info', 'Request prepared', { payloadBytes: body.length });
 
   try {
+    log('info', 'Sending request to Groq API');
     const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${GROQ_API_KEY}`,
         'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Connection': 'close',  // Disable keep-alive to avoid stale connection pool issues
       },
       body: body,
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      console.error(`[${timestamp}] Groq API error (${response.status}): ${error}`);
+      const errorBody = await response.text();
+      const headers = Object.fromEntries(response.headers.entries());
+      log('error', 'Groq API returned error', {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+        body: errorBody.slice(0, 1000),
+      });
       return res.status(response.status).json({ error: `Groq error: ${response.status}` });
     }
 
     const data = await response.json();
     const transcript = (data.text || '').trim();
-    console.log(`[${timestamp}] Transcription success: ${transcript.length} chars`);
+    log('info', 'Transcription success', { chars: transcript.length });
     res.json({ transcript });
   } catch (err) {
-    const code = err.cause?.code || err.code || 'unknown';
-    console.error(`[${timestamp}] Transcription failed: ${err.message} (code: ${code})`);
+    // Extract all possible error details
+    const errorDetails = {
+      message: err.message,
+      name: err.name,
+      code: err.code,
+      errno: err.errno,
+      syscall: err.syscall,
+      hostname: err.hostname,
+      cause: err.cause ? {
+        message: err.cause.message,
+        code: err.cause.code,
+        errno: err.cause.errno,
+        syscall: err.cause.syscall,
+        hostname: err.cause.hostname,
+      } : undefined,
+      stack: err.stack,
+    };
+    // Remove undefined values
+    Object.keys(errorDetails).forEach(k => errorDetails[k] === undefined && delete errorDetails[k]);
+    if (errorDetails.cause) {
+      Object.keys(errorDetails.cause).forEach(k => errorDetails.cause[k] === undefined && delete errorDetails.cause[k]);
+    }
+
+    log('error', 'Transcription failed - network/fetch error', errorDetails);
     res.status(500).json({ error: `Server error: ${err.message}` });
   }
 });
@@ -106,17 +152,18 @@ function createSession(cols, rows) {
       env: process.env,
     });
     execSync(`tmux -S ${TMUX_SOCKET} set-option -t ${SESSION_NAME} status off`);
-    console.log(`Created tmux session: ${SESSION_NAME}`);
+    log('info', 'tmux', `Created session: ${SESSION_NAME}`, { cols, rows });
     return true;
   } catch (e) {
-    console.error(`Failed to create tmux session: ${e.message}`);
+    log('error', 'tmux', `Failed to create session: ${e.message}`);
     return false;
   }
 }
 
 // WebSocket handler for terminal
 wss.on('connection', (ws) => {
-  console.log('New terminal connection');
+  const connId = Math.random().toString(36).slice(2, 8);
+  log('info', 'ws', 'New terminal connection', { connId });
 
   let ptyProcess = null;
 
@@ -154,7 +201,7 @@ wss.on('connection', (ws) => {
         });
 
         ptyProcess.onExit(({ exitCode }) => {
-          console.log(`PTY exited with code ${exitCode}`);
+          log('info', 'pty', 'PTY exited', { connId, exitCode });
         });
 
       } else if (msg.type === 'input' && ptyProcess) {
@@ -164,16 +211,19 @@ wss.on('connection', (ws) => {
       } else if (msg.type === 'smart-stop' && ptyProcess) {
         // Check if shell is idle or running a command
         try {
-          const result = execSync(`tmux -S ${TMUX_SOCKET} display-message -p -t ${SESSION_NAME} '#{pane_current_command}'`).toString().trim();
-          if (result === 'bash' || result === 'zsh' || result === 'sh') {
+          const currentCmd = execSync(`tmux -S ${TMUX_SOCKET} display-message -p -t ${SESSION_NAME} '#{pane_current_command}'`).toString().trim();
+          if (currentCmd === 'bash' || currentCmd === 'zsh' || currentCmd === 'sh') {
             // At prompt - respawn pane with fresh shell (no visible command)
+            log('info', 'smart-stop', 'Respawning shell (at prompt)', { connId, currentCmd });
             execSync(`tmux -S ${TMUX_SOCKET} respawn-pane -k -t ${SESSION_NAME} -c ${process.env.HOME}`);
           } else {
             // Command running - send Ctrl+C
+            log('info', 'smart-stop', 'Sending Ctrl+C (command running)', { connId, currentCmd });
             ptyProcess.write('\x03');
           }
         } catch (e) {
           // Fallback to Ctrl+C if tmux query fails
+          log('warn', 'smart-stop', 'Tmux query failed, sending Ctrl+C', { connId, error: e.message });
           ptyProcess.write('\x03');
         }
       }
@@ -183,7 +233,7 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    console.log('Terminal connection closed');
+    log('info', 'ws', 'Terminal connection closed', { connId });
     if (ptyProcess) ptyProcess.kill();
   });
 });
@@ -204,7 +254,5 @@ function getLocalIP() {
 
 server.listen(PORT, '0.0.0.0', () => {
   const localIP = getLocalIP();
-  console.log(`\nclaude-to-go running on port ${PORT}`);
-  console.log(`  Local:   http://localhost:${PORT}`);
-  console.log(`  Network: http://${localIP}:${PORT}\n`);
+  log('info', 'server', 'Started', { port: PORT, local: `http://localhost:${PORT}`, network: `http://${localIP}:${PORT}` });
 });
