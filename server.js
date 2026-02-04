@@ -64,6 +64,8 @@ app.post('/transcribe', express.raw({ type: '*/*', limit: '25mb' }), async (req,
     contentType: contentType,
   });
   form.append('model', 'whisper-large-v3-turbo');
+  form.append('language', 'en');
+  form.append('prompt', 'Natural language instructions to Claude Code, an AI coding assistant in the terminal.');
 
   log('info', 'Request prepared', { payloadBytes: req.body.length });
 
