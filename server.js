@@ -120,8 +120,9 @@ function createSession(cols, rows) {
   try {
     execSync(`tmux -S ${TMUX_SOCKET} new-session -d -s ${SESSION_NAME} -x ${cols} -y ${rows}`, {
       cwd: process.env.HOME,
-      env: process.env,
+      env: { ...process.env, SHELL: '/usr/bin/zsh' },
     });
+    execSync(`tmux -S ${TMUX_SOCKET} set-option -g default-shell /usr/bin/zsh`);
     execSync(`tmux -S ${TMUX_SOCKET} set-option -t ${SESSION_NAME} status off`);
     log('info', 'tmux', `Created session: ${SESSION_NAME}`, { cols, rows });
     return true;
